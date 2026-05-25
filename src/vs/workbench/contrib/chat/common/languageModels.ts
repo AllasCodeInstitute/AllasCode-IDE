@@ -1332,8 +1332,9 @@ export class LanguageModelsService implements ILanguageModelsService {
 	async updateLanguageModelsProviderGroupApiKey(vendorId: string, providerGroupName: string): Promise<void> {
 		const vendor = this.getVendors().find(({ vendor }) => vendor === vendorId);
 		const schema = vendor?.configuration as IJSONSchema | undefined;
-		const apiKeySchema = schema?.properties?.apiKey;
-		if (!vendor || !schema || !apiKeySchema) {
+		const apiKeySchema = schema?.properties?.apiKey ?? schema?.properties?.apiKeys;
+		const apiKeyProperty = schema?.properties?.apiKey ? 'apiKey' : schema?.properties?.apiKeys ? 'apiKeys' : undefined;
+		if (!vendor || !schema || !apiKeySchema || !apiKeyProperty) {
 			return;
 		}
 
@@ -1344,12 +1345,12 @@ export class LanguageModelsService implements ILanguageModelsService {
 
 		try {
 			const existingConfiguration = await this._resolveConfiguration(existing, schema);
-			const apiKey = await this.promptForValue(existing.name, 'apiKey', apiKeySchema, !!schema.required?.includes('apiKey'), existingConfiguration);
-			if (apiKey === undefined || apiKey === existingConfiguration.apiKey) {
+			const apiKey = await this.promptForValue(existing.name, apiKeyProperty, apiKeySchema, !!schema.required?.includes(apiKeyProperty), existingConfiguration);
+			if (apiKey === undefined || apiKey === existingConfiguration[apiKeyProperty]) {
 				return;
 			}
 
-			const configuration = { ...existingConfiguration, apiKey };
+			const configuration = { ...existingConfiguration, [apiKeyProperty]: apiKey };
 			const updated = {
 				...await this._resolveLanguageModelProviderGroup(existing.name, vendorId, configuration, schema),
 				settings: existing.settings
@@ -1622,6 +1623,9 @@ export class LanguageModelsService implements ILanguageModelsService {
 			}
 			return selectedItems;
 		}
+		if (propertySchema.type === 'array' && propertySchema.items && !Array.isArray(propertySchema.items) && propertySchema.items.type === 'string') {
+			return this.promptForStringArray(groupName, property, propertySchema, existing);
+		}
 
 		if (propertySchema.type === 'string' && Array.isArray(propertySchema.enum) && propertySchema.enum.length > 0) {
 			return this.promptForEnum(groupName, property, propertySchema, existing);
@@ -1641,6 +1645,9 @@ export class LanguageModelsService implements ILanguageModelsService {
 		}
 
 		if (propertySchema.type === 'array' && propertySchema.items && !Array.isArray(propertySchema.items) && propertySchema.items.enum) {
+			return true;
+		}
+		if (propertySchema.type === 'array' && propertySchema.items && !Array.isArray(propertySchema.items) && propertySchema.items.type === 'string') {
 			return true;
 		}
 
@@ -1695,6 +1702,24 @@ export class LanguageModelsService implements ILanguageModelsService {
 		} finally {
 			disposables.dispose();
 		}
+	}
+
+	private async promptForStringArray(groupName: string, property: string, propertySchema: IJSONSchema, existing: IStringDictionary<unknown> | undefined): Promise<string[] | undefined> {
+		const existingValue = existing?.[property];
+		const defaultValue = Array.isArray(existingValue) ? existingValue.filter(value => typeof value === 'string').join(', ') : '';
+		const rawValue = await this.promptForInput(groupName, property, {
+			...propertySchema,
+			type: 'string',
+			markdownDescription: localize('stringArrayPromptDescription', "{0}\n\nEnter a comma-separated list.", this.getDescriptionPlaintext(propertySchema) ?? localize('defaultArrayDescription', "Enter values"))
+		}, false, { [property]: defaultValue });
+		if (rawValue === undefined || typeof rawValue !== 'string') {
+			return undefined;
+		}
+
+		return rawValue
+			.split(',')
+			.map(value => value.trim())
+			.filter(value => value.length > 0);
 	}
 
 	private async promptForEnum(groupName: string, property: string, propertySchema: IJSONSchema & { enumItemLabels?: string[] }, existing: IStringDictionary<unknown> | undefined): Promise<string | undefined> {

@@ -794,10 +794,10 @@ function createProviderGroupActions(
 		label: localize('models.renameGroup', 'Rename Group'),
 		run: () => languageModelsService.renameLanguageModelsProviderGroup(vendor.vendor, groupName)
 	}));
-	if (configurationProperties?.apiKey) {
+	if (configurationProperties?.apiKey || configurationProperties?.apiKeys) {
 		actions.push(toAction({
 			id: 'updateApiKeyAction',
-			label: localize('models.updateApiKey', "Update API Key"),
+			label: localize('models.updateApiKey', "Update API Key(s)"),
 			run: () => languageModelsService.updateLanguageModelsProviderGroupApiKey(vendor.vendor, groupName)
 		}));
 	}
